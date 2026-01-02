@@ -1,0 +1,28 @@
+{
+  "tickers": [
+    "SPY",
+    "QQQ",
+    "IWM",
+    "EFA",
+    "EEM",
+    "TLT",
+    "IEF",
+    "LQD",
+    "HYG",
+    "GLD",
+    "DBC",
+    "VNQ"
+  ],
+  "start_date": "2006-01-01",
+  "end_date": "2025-08-15",
+  "rebalance": "W-FRI",
+  "risk_free": "^IRX",
+  "macro": {
+    "VIX": "^VIX",
+    "DXY": "DX-Y.NYB"
+  },
+  "use_macro": true,
+  "macro_path": "figures/yield_features_weekly.csv",
+  "train_end": "2020-12-31",
+  "panel_path": "outputs/panel_macro.parquet"
+}
