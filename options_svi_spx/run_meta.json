@@ -1,0 +1,17 @@
+{
+  "experiment_name": "options_svi_spx",
+  "config_path": "",
+  "start_time": "2025-10-25 01:54:23",
+  "device": "cuda",
+  "dtype": "fp16",
+  "seeds": {
+    "train": 1337,
+    "eval": 2025,
+    "test": 4242
+  },
+  "results_index": {
+    "train_csv": "C:/Users/hocke/Desktop/quant_portfolio_scaffold/outputs/options_svi_spx/logs/train.csv",
+    "svi_params_csv": "C:/Users/hocke/Desktop/quant_portfolio_scaffold/outputs/options_svi_spx/eval/svi_params.csv",
+    "noarb_csv": "C:/Users/hocke/Desktop/quant_portfolio_scaffold/outputs/options_svi_spx/diagnostics/no_arbitrage_svi.csv"
+  }
+}
