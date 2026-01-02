@@ -1,0 +1,135 @@
+#options_nodes.yaml
+version: 1
+experiment_name: "options_nodes_spx"
+
+seeds: { train: 1337, eval: 2025 }
+device: "cuda"
+dtype: "fp16"
+
+paths:
+  project_root: "C:/Users/admin/Desktop/quant_portfolio_scaffold"
+  data_root: "${paths.project_root}/data/options"
+  outputs_root: "${paths.project_root}/outputs"
+  figures_root: "${paths.project_root}/figures"
+  cache_root: "${paths.project_root}/.cache"
+
+data:
+  source: "options_nodes"
+
+  # size caps (Option B)
+  max_days: 120
+  max_strikes_per_bucket: 12
+
+  files:
+    nodes: "${paths.data_root}/spx_latest.csv"
+    aux:
+      vix:      "${paths.data_root}/vix.csv"
+      vvix:     "${paths.data_root}/VVIX INDEX.csv"
+      skew:     "${paths.data_root}/SKEW Index.csv"
+      rvol_hvg: "${paths.data_root}/RVOL (HVG).csv"
+      spx:      "${paths.data_root}/spx.csv"
+      spx_div:  "${paths.data_root}/spx_div_yield.csv"
+
+  # schema must match your raw CSV header names
+  schema:
+    parse_dates: ["date", "expiration"]
+    date_col: "date"
+    expiration_col: "expiration"
+    dte_col: "dte"
+    call_put_col: "cp"         # was "call_put" before; your data shows "cp"
+    strike_col: "strike"
+    spot_col: null
+    rate_col: null
+    div_col:  null
+    iv_col: "iv"
+    delta_col: "delta"
+    gamma_col: "gamma"
+    vega_col: "vega"
+    theta_col: "theta"
+    rho_col: "rho"
+
+  filters:
+    delta_band: [0.0, 1.0]
+    dte_windows: [[1, 9999]]
+    min_bid_ask: 0.0
+    drop_na: true
+
+  targets:
+    predict: ["iv","delta","gamma","vega","theta"]
+
+  features:
+    include: ["vix","vvix","skew","rvol_hvg","spx","spx_div"]
+    scaling: "robust"
+    stationarity: { zscore_by_asset: false }
+    calendar: { add_weekday: true, sqrt_dt: true }
+
+  # exactly one splits block
+  splits:
+    lookbacks: [128]
+    horizons:  [1]
+    val_fraction: 0.2
+    test_fraction: 0.0
+    rolling: true
+
+  # exactly one loader block
+  loader:
+    batch_size: 64
+    num_workers: 0     # Windows-safe
+    shuffle: true
+    pin_memory: true
+
+model:
+  family: "itoformer"
+  in_features: 10
+  n_assets: 1
+  encoder:
+    d_model: 256
+    n_layers: 6
+    n_heads: 8
+    ff_mult: 2.0
+    attn_dropout: 0.05
+    ffn_dropout: 0.05
+    resid_dropout: 0.05
+    pos_embed: true
+    use_rmsnorm: true
+    max_len: 2048
+  heads:
+    options_node: { enabled: true }
+    forecast:      { enabled: false }
+    martingale:    { enabled: false }
+    options_svi:   { enabled: false }
+    term_structure:{ enabled: false }
+
+losses:
+  prediction: { name: "mse", weight: 1.0 }
+  no_arbitrage:
+    enabled: true
+    butterfly_weight: 0.10
+    calendar_weight:  0.10
+  ito_consistency: { enabled: true, weight: 0.0, layerwise_log: true }  # fixed key
+  martingale:      { enabled: false, weight: 0.0 }                        # fixed key
+
+train:
+  epochs: 1
+  grad_clip: 1.0
+  optimizer: { name: "adamw", lr: 5.0e-4, betas: [0.9, 0.99], weight_decay: 1.0e-4 }
+  amp: { enabled: true, precision: "fp16" }
+  early_stop: { enabled: false, metric: "val_loss", patience: 10 }
+
+eval:
+  metrics: { include: ["MSE","MAE","RMSE","HedgingError"] }
+  no_arbitrage_checks: { butterfly: true, calendar: true }
+  logging: { write_tables: true, write_figures: true }
+
+artifacts:
+  outdir: "C:/Users/admin/Desktop/quant_portfolio_scaffold/outputs/options_nodes_spx_win"
+  save_best: true
+  save_every: 0
+  keep_last_n: 1
+
+logging:
+  level: "INFO"
+  file: "${artifacts.outdir}/train.log"
+  csv: true
+  csv_dir: "${artifacts.outdir}/logs"   # write CSVs beside this run’s artifacts
+  wandb: { enabled: false, project: "itoformer", run_name: "${experiment_name}" }

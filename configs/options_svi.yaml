@@ -1,0 +1,169 @@
+# options_svi.yaml
+version: 1
+experiment_name: "options_svi_spx"
+
+seeds: { train: 1337, eval: 2025, test: 4242 }
+device: "cuda"
+dtype: "fp16"
+
+paths:
+  project_root: "C:/Users/hocke/Desktop/quant_portfolio_scaffold"
+  data_root: "${paths.project_root}/data/options"
+  outputs_root: "${paths.project_root}/outputs"
+  figures_root: "${paths.project_root}/figures"
+  cache_root: "${paths.project_root}/.cache"
+
+data:
+  source: "options_svi"
+
+  # size caps (match nodes)
+  max_days: 120
+  max_strikes_per_bucket: 16
+
+  files:
+    nodes: "${paths.data_root}/spx_latest.csv"
+    aux:
+      vix:      "${paths.data_root}/vix.csv"
+      vvix:     "${paths.data_root}/VVIX INDEX.csv"
+      skew:     "${paths.data_root}/SKEW Index.csv"
+      rvol_hvg: "${paths.data_root}/RVOL (HVG).csv"
+      spx:      "${paths.data_root}/spx.csv"
+      spx_div:  "${paths.data_root}/spx_div_yield.csv"
+
+  schema:
+    parse_dates: ["date", "expiration"]
+    date_col: "date"
+    expiration_col: "expiration"
+    dte_col: "dte"
+    call_put_col: "cp"
+    strike_col: "strike"
+    spot_col: null
+    rate_col: null
+    div_col:  null
+    iv_col: "iv"
+    delta_col: "delta"
+    gamma_col: "gamma"
+    vega_col: "vega"
+    theta_col: "theta"
+    rho_col: "rho"
+
+  filters:
+    delta_band: [0.0, 1.0]
+    dte_windows: [[1, 9999]]
+    min_bid_ask: 0.0
+    drop_na: true
+    min_quotes_per_bucket: 12
+    # hygiene toggles (help surface data issues in logs)
+    assert_positive_iv: true
+    assert_nonempty_groups: true
+
+  targets:
+    predict: ["iv"]
+
+  features:
+    include: ["vix","vvix","skew","rvol_hvg","spx","spx_div"]
+    scaling: "robust"
+    stationarity: { zscore_by_asset: false }
+    calendar: { add_weekday: true, sqrt_dt: true }
+
+  splits:
+    lookbacks: [128]
+    horizons:  [1]
+    val_fraction: 0.20
+    test_fraction: 0.10
+    split_mode: "chronological"
+    split_seed: 1337
+    rolling: true
+
+  loader:
+    batch_size: 64
+    num_workers: 0
+    shuffle: true
+    pin_memory: true
+
+model:
+  family: "itoformer"
+  encoder:
+    d_model: 256
+    n_layers: 6
+    n_heads: 8
+    ff_mult: 2.0
+    attn_dropout: 0.05
+    ffn_dropout: 0.05
+    resid_dropout: 0.05
+    pos_embed: true
+    use_rmsnorm: true
+    max_len: 2048
+  heads:
+    svi:
+      enabled: true
+      bounds:
+        a:     [0.005,   2.0]
+        b:     [0.05,  20.0]
+        rho:   [-0.999, 0.999]
+        m:     [-3.0,   3.0]
+        sigma: [0.005,  3.0]
+      noarb:
+        bfly_weight: 7.25
+        cal_weight:  1.2
+      ito_consistency_weight: 1.0e-3
+      martingale_weight: 0.0
+    nodes:         { enabled: false }
+    forecast:      { enabled: false }
+    martingale:    { enabled: false }
+    term_structure:{ enabled: false }
+
+train:
+  epochs: 1000
+  grad_clip: 1.0
+  optimizer: { name: "adamw", lr: 3.0e-4, betas: [0.9, 0.99], weight_decay: 1.0e-4 }
+
+  scheduler:
+    name: "cosine"
+    warmup_steps: 350
+    # total_steps: auto
+
+  amp: { enabled: true, precision: "fp16" }
+
+  weights: { pred: 1.0 }
+
+  vega_weighting:
+    enabled: true
+    k_scale: 0.90
+    power: 2.0
+
+  param_l2:
+    a: 1.0e-4
+    b: 5.0e-4
+    rho: 0.0
+    m: 0.0
+    sigma: 3.0e-4
+
+  bound_tol_frac: 0.005
+  early_stop: { enabled: false, metric: "val_loss", patience: 10 }
+
+eval:
+  metrics: { include: ["MSE","RMSE"] }
+  no_arbitrage_checks: { butterfly: true, calendar: true }
+  logging:
+    write_tables: true
+    write_figures: true
+    csv_precision: 6
+  outputs:
+    svi_params_csv: "${paths.outputs_root}/${experiment_name}/eval/svi_params.csv"
+    noarb_csv:      "${paths.outputs_root}/${experiment_name}/diagnostics/no_arbitrage_svi.csv"
+
+artifacts:
+  outdir: "${paths.outputs_root}/${experiment_name}"
+  save_best: true
+  save_every: 0
+  keep_last_n: 2
+
+logging:
+  level: "INFO"
+  file: "${paths.outputs_root}/${experiment_name}/train.log"
+  csv_train: "${paths.outputs_root}/${experiment_name}/logs/train.csv"
+  wandb: { enabled: false, project: "itoformer", run_name: "${experiment_name}" }
+
+repro:
+  seed: 1337

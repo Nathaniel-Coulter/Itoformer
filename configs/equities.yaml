@@ -1,0 +1,185 @@
+version: 1
+experiment_name: "equities_itoformer_h{1,5,20}_L{128,252}"
+
+seeds:
+  train: 1337
+  eval: 2025
+
+device: "cuda"
+dtype: "fp16"
+
+paths:
+  project_root: "C:/Users/admin/Desktop/quant_portfolio_scaffold"
+  data_root: "${paths.project_root}/data/etfs"
+  outputs_root: "${paths.project_root}/outputs"
+  figures_root: "${paths.project_root}/figures"
+  cache_root: "${paths.project_root}/.cache"
+
+data:
+  source: "equities"
+  files:
+    SPY: "${paths.data_root}/SPY.csv"
+    QQQ: "${paths.data_root}/QQQ.csv"
+    IWM: "${paths.data_root}/IWM.csv"
+    TLT: "${paths.data_root}/TLT.csv"
+    IEF: "${paths.data_root}/IEF.csv"
+    LQD: "${paths.data_root}/LQD.csv"
+    HYG: "${paths.data_root}/HYG.csv"
+    GLD: "${paths.data_root}/GLD.csv"
+    DBC: "${paths.data_root}/DBC.csv"
+    VNQ: "${paths.data_root}/VNQ.csv"
+    EFA: "${paths.data_root}/EFA.csv"
+    EEM: "${paths.data_root}/EEM.csv"
+
+  schema:
+    date_col: "Date"
+    price_col: "Adj Close"   # you confirmed ETFs use Adj Close
+
+  returns:
+    compute: true
+    horizons:
+      - 1
+      - 5
+      - 20
+
+  splits:
+    lookbacks:
+      - 128
+      - 252
+    horizons:
+      - 1
+      - 5
+      - 20
+    val_fraction: 0.20
+    test_fraction: 0.0
+    rolling: true
+
+  features:
+    scaling: "standard"
+    stationarity:
+      returns: true
+      log: false
+      zscore_by_asset: true
+    calendar:
+      add_weekday: true
+      sqrt_dt: true
+    regime:
+      enabled: false
+
+  loader:
+    batch_size: 64
+    num_workers: 4
+    shuffle: true
+    pin_memory: true
+
+model:
+  family: "itoformer"
+  encoder:
+    d_model: 256
+    n_layers: 6
+    n_heads: 8
+    ff_mult: 2.0
+    attn_dropout: 0.05
+    ffn_dropout: 0.05
+    resid_dropout: 0.05
+    pos_embed: true
+    use_rmsnorm: true
+    max_len: 2048
+
+  heads:
+    forecast:
+      enabled: true
+    martingale:
+      enabled: false
+    options_node:
+      enabled: false
+    options_svi:
+      enabled: false
+    term_structure:
+      enabled: false
+
+losses:
+  prediction:
+    name: "mse"
+    weight: 1.0
+
+  ito_consistency:
+    enabled: true
+    weight: 0.05
+    layerwise_log: true
+
+  martingale:
+    enabled: false
+    weight: 0.0
+
+  allocation:
+    sharpe_surrogate:
+      enabled: false
+      weight: 0.0
+    turnover:
+      enabled: false
+      weight: 0.0
+
+  no_arbitrage:
+    enabled: false
+
+train:
+  epochs: 50
+  grad_clip: 1.0
+  optimizer:
+    name: "adamw"
+    lr: 0.0005
+    betas:
+      - 0.9
+      - 0.99
+    weight_decay: 0.0001
+  amp:
+    enabled: true
+    precision: "fp16"
+  early_stop:
+    enabled: false
+    metric: "val_loss"
+    patience: 10
+
+eval:
+  portfolio:
+    policy: "proportional"
+    cap: 1.0
+    tcost_bps: 0.0
+    ann_factor: 252.0
+
+  metrics:
+    include:
+      - "MSE"
+      - "MAE"
+      - "RMSE"
+      - "Sharpe(PnL)"
+      - "Sortino(PnL)"
+      - "Turnover"
+
+  statistics:
+    dm:
+      against: "itoformer"
+      hac: true
+      max_lag: null
+    spa:
+      enabled: false
+
+  logging:
+    save_predictions: true
+    write_tables: true
+    write_figures: true
+
+artifacts:
+  outdir: "${paths.outputs_root}/${experiment_name}"
+  save_best: true
+  save_every: 0
+  keep_last_n: 1
+
+logging:
+  level: "INFO"
+  file: "${paths.outputs_root}/${experiment_name}/train.log"
+  wandb:
+    enabled: false
+    project: "itoformer"
+    run_name: "${experiment_name}"

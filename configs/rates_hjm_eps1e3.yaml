@@ -1,0 +1,110 @@
+version: 1
+experiment_name: "rates_hjm"
+
+seeds: { train: 1337, eval: 2025 }
+device: "cuda"
+dtype: "bf16"
+
+paths:
+  project_root: "C:/Users/hocke/Desktop/quant_portfolio_scaffold"
+  data_root: "${paths.project_root}/data/fixed_income"
+  outputs_root: "${paths.project_root}/outputs"
+  figures_root: "${paths.project_root}/figures"
+  cache_root: "${paths.project_root}/.cache"
+
+data:
+  source: "rates"
+  files:
+    ust_yields:
+      DGS1MO:  "${paths.data_root}/DGS1MO.csv"
+      DGS3MO:  "${paths.data_root}/DGS3MO.csv"
+      DGS6MO:  "${paths.data_root}/DGS6MO.csv"
+      DGS1:    "${paths.data_root}/DGS1.csv"
+      DGS2:    "${paths.data_root}/DGS2.csv"
+      DGS3:    "${paths.data_root}/DGS3.csv"
+      DGS5:    "${paths.data_root}/DGS5.csv"
+      DGS7:    "${paths.data_root}/DGS7.csv"
+      DGS10:   "${paths.data_root}/DGS10.csv"
+      DGS20:   "${paths.data_root}/DGS20.csv"
+      DGS30:   "${paths.data_root}/DGS30.csv"
+  rates:
+    n_tenors: 11
+    yield_cols_first_n: 11
+    lookback_for_hjm: 16
+    # strictly increasing, years:
+    tenors_years: [0.083333, 0.25, 0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 10.0, 20.0, 30.0]
+
+  # (If your datamodule uses schemas/panels, keep those blocks as-is)
+
+  splits:
+    lookbacks: [128]
+    horizons: [5, 20]
+    val_fraction: 0.20
+    test_fraction: 0.0
+    rolling: true
+
+  loader:
+    batch_size: 64
+    num_workers: 4
+    shuffle: true
+    pin_memory: true
+
+model:
+  family: "itoformer"
+  encoder:
+    d_model: 256
+    n_layers: 6
+    n_heads: 8
+    ff_mult: 2.0
+    attn_dropout: 0.05
+    ffn_dropout: 0.05
+    resid_dropout: 0.05
+    pos_embed: true
+    use_rmsnorm: true
+    max_len: 2048
+  heads:
+    term_structure: { enabled: true }
+    forecast:       { enabled: false }
+    martingale:     { enabled: false }
+    options_node:   { enabled: false }
+    options_svi:    { enabled: false }
+
+losses:
+  prediction:      { name: "mse", weight: 1.0 }
+  no_arbitrage:
+    enabled: true
+    hjm_drift_weight: 0.10
+    hjm_eps: 1.0e-3
+  ito_consistency:
+    enabled: true
+    weight: 0.05
+    layerwise_log: true
+  martingale:      { enabled: false, weight: 0.0 }
+
+train:
+  epochs: 5 #manually select epochs here NOT with --epochs 
+  grad_clip: 1.0
+  optimizer: { name: "adamw", lr: 3.0e-4, betas: [0.9, 0.99], weight_decay: 1.0e-4 }
+  amp: { enabled: true, precision: "bf16" }
+  early_stop: { enabled: false, metric: "val_loss", patience: 10 }
+
+eval:
+  metrics: { include: ["MSE","RMSE","MAE"] }
+  no_arbitrage_checks: { hjm_drift: true }
+  logging: { write_tables: true, write_figures: true }
+  outputs:
+    hjm_csv:    "${paths.outputs_root}/${experiment_name}/diagnostics/hjm_drift.csv"
+    val_curves: "${paths.outputs_root}/${experiment_name}/eval/val_curves.csv"
+
+logging:
+  level: "INFO"
+  file: "${paths.outputs_root}/${experiment_name}/train.log"
+  csv: true
+  csv_dir: "${paths.outputs_root}/${experiment_name}/logs"
+  csv_precision: 6
+
+artifacts:
+  outdir: "${paths.outputs_root}/${experiment_name}"
+  save_best: true
+  save_every: 0
+  keep_last_n: 1
