@@ -1,0 +1,6 @@
+import pandas as pd
+df = pd.read_csv("data/options/spx_latest.csv", nrows=100000)
+dates = pd.to_datetime(df["date"], errors="coerce")
+print("Min date:", dates.min())
+print("Max date:", dates.max())
+print("Unique dates:", len(dates.unique()))
