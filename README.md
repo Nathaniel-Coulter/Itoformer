@@ -1,6 +1,6 @@
 ```text
 itoformer_full.zip
-(updated Jan 2026, then again early May 2026) <--- This will probably be my last update. 
+(Updated Early May 2026)
 ├── baselines
 │   ├── arima.py
 │   ├── garch.py
